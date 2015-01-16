@@ -1,10 +1,8 @@
 package test
 
 import(
-	"fmt"
 	"net/http"
 	"golang.org/x/crypto/ssh"
-	"errors"
 	"strconv"
 	"os/user"
 	"io/ioutil"
@@ -20,52 +18,43 @@ type ServerStream struct {
 	Read *http.Request
 }
 
-type EasySSH struct {
-	Server string
-	Config *ssh.ClientConfig
-}
-
-func ParseParam (r *http.Request, param string) (parsed_param string, err error) {
+func ParseParam (r *http.Request, param string) (parsed_param string) {
 	parsed_param = r.URL.Query().Get(param)
-	if len(parsed_param) == 0 {
-		err = errors.New("Ensure " + param)
-		return
-	}
 	return
 }
 
-func ParseIntParam (r *http.Request, param string) (parsed_param int, err error) {
+func ParseIntParam (r *http.Request, param string) (parsed_param int) {
 	param = r.URL.Query().Get(param)
 	parsed_param, _ = strconv.Atoi(param)
 	return
 }
 
-func (doge Watchdoge) GetParams (stream ServerStream) (params Watchdoge, err error) {
-	procname, err := ParseParam(stream.Read, "procname")
-	if err != nil {
-		fmt.Fprintf(stream.Write, "Failed to fetch procname parameter!")
-		return
-	}
-	subprocname, err := ParseParam(stream.Read, "subprocname")
-	if err != nil {
-		fmt.Fprintf(stream.Write, "Failed to fetch subprocname parameter!")
-		return
-	}
-	period, err := ParseIntParam(stream.Read, "period")
-	if err != nil {
-		period = 1
-	}
-	iterations, err := ParseIntParam(stream.Read, "iterations")
-	if err != nil {
-		iterations = 3
-	}
+func (watchdoge *Watchdoge) GetProcname (stream ServerStream) {
+	procname := ParseParam(stream.Read, "procname")
+	watchdoge.Procname = procname
+}
 
-	params = doge {procname, subprocname, period, iterations}
-	return
+func (watchdoge *Watchdoge) GetSubprocname (stream ServerStream) {
+	subprocname := ParseParam(stream.Read, "subprocname")
+	watchdoge.Subprocname = subprocname
+}
+
+func (watchdoge *Watchdoge) GetPeriod (stream ServerStream) {
+	period := ParseIntParam(stream.Read, "period")
+	watchdoge.Period = period
+}
+
+func (watchdoge *Watchdoge) GetIterations (stream ServerStream) {
+	iterations := ParseIntParam(stream.Read, "iterations")
+	watchdoge.Iterations = iterations
+}
+
+type EasySSH struct {
+	Server string
+	Config *ssh.ClientConfig
 }
 
 func getKeyFile () (pubkey ssh.Signer){
-
 	usr, err := user.Current()
 	file := usr.HomeDir + "/.ssh/id_rsa"
 	buf, err := ioutil.ReadFile(file)
@@ -79,23 +68,15 @@ func getKeyFile () (pubkey ssh.Signer){
 	return
 }
 
-func (conf EasySSH) GetConfig (stream ServerStream) (easy_config EasySSH, err error) {
-	user, err := ParseParam(stream.Read, "user")
-	if err != nil {
-		fmt.Fprintf(stream.Write, "Failed to fetch user parameter!")
-		return
-	}
-	server, err := ParseParam(stream.Read, "server")
-	if err != nil {
-		fmt.Fprintf(stream.Write, "Failed to fetch server parameter!")
-		return
-	}
+func (ssh_params *EasySSH) GetUser (stream ServerStream) {
+	ssh_params.Server = ParseParam(stream.Read, "server")
+}
+
+func (ssh_params *EasySSH) GetConfig (stream ServerStream) {
+	user := ParseParam(stream.Read, "user")
 	pubkey := getKeyFile()
-	config := &ssh.ClientConfig{
+	ssh_params.Config = &ssh.ClientConfig{
 			User: user,
 			Auth: []ssh.AuthMethod{ssh.PublicKeys(pubkey)},
 		}
-
-	easy_config = conf {server, config}
-	return
 }

@@ -3,23 +3,16 @@ package main
 import(
 	"fmt"
 	"net/http"
-	"errors"
 	"encoding/json"
 	"golang.org/x/crypto/ssh"	
 	"bytes"
 	"strings"
-	"strconv"
 	"time"
 	"./test"
 )
 
-func ConnectAndRun (params test.Watchdoge, cmd string) (response string, err error) {
-	client, err := ssh.Dial("tcp", params.Server+":22", params.Config)
-	if err != nil {
-		fmt.Fprintf(params.W, "Failed to dial: %s", err)
-		return
-	}
-
+func ConnectAndRun (ssh_params test.EasySSH, cmd string) (response string, err error) {
+	client, err := ssh.Dial("tcp", ssh_params.Server+":22", ssh_params.Config)
 	session, err := client.NewSession()
 	if err != nil {
 		panic("Failed to create session: " + err.Error())
@@ -36,19 +29,16 @@ func ConnectAndRun (params test.Watchdoge, cmd string) (response string, err err
 	return 
 }
 
-func RunPidstat (params test.Watchdoge, pid string) {
-	cmd := "pidstat -r -p " + pid +" | grep " + params.Procname
-	response, err := ConnectAndRun(params, cmd)
-	if err != nil {
-		panic("Failed to run pidstat: " + err.Error())
-	}
+func RunPidstat (ssh_params test.EasySSH, watchdoge test.Watchdoge, pid string) {
+	cmd := "LANG=ru_RU.UTF-8 pidstat -r -p " + pid +" | grep " + watchdoge.Procname
+	response, _ := ConnectAndRun(ssh_params, cmd)
 	fmt.Println(strings.TrimSpace(response))
 	return
 }
 
-func FindRemoteProcess (params test.Watchdoge) (pid string) {
-	cmd := "ps ax -o pid,command | grep " + params.Procname + " | grep " + params.Subprocname + " | grep -v bash | awk '{print $1}'"
-	response, err := ConnectAndRun(params, cmd)
+func FindRemoteProcess (ssh_params test.EasySSH, watchdoge test.Watchdoge) (pid string) {
+	cmd := "ps ax -o pid,command | grep " + watchdoge.Procname + " | grep " + watchdoge.Subprocname + " | grep -v bash | awk '{print $1}'"
+	response, err := ConnectAndRun(ssh_params, cmd)
 	if err != nil {
 		panic("Failed to find remote process: " + err.Error())
 	}
@@ -56,26 +46,23 @@ func FindRemoteProcess (params test.Watchdoge) (pid string) {
 	return
 }
 
-func PullRemoteProcessMetrics (params test.Watchdoge) {
+func PullRemoteProcessMetrics (ssh_params test.EasySSH, watchdoge test.Watchdoge) {
 	fmt.Println("Process info:")
-	pid := FindRemoteProcess(params)
-	for i := 0; i < params.Iterations; i++ {
-		go RunPidstat(params, pid)
-		time.Sleep(time.Duration(params.Period) * time.Second)
+	pid := FindRemoteProcess(ssh_params, watchdoge)
+	for i := 0; i < watchdoge.Iterations; i++ {
+		go RunPidstat(ssh_params, watchdoge, pid)
+		time.Sleep(time.Duration(watchdoge.Period) * time.Second)
 	}
 }
 
-func CheckSSHConnection(params test.Watchdoge) (err error) {
-	response, err := ConnectAndRun(params, "uname")
+func CheckSSHConnection(ssh_params test.EasySSH) {
+	response, _ := ConnectAndRun(ssh_params, "uname")
 	response = strings.TrimSpace(response)
-	if err != nil {
-		fmt.Fprintf(params.W, "Failed to estabilish SSH connection: %s", err)
-	}
-	return
+	fmt.Println(response)
 }
 
-func renderJSON() {
-	b, err := json.Marshal(success)
+func renderJSON (stream test.ServerStream, structure interface{}) {
+	b, err := json.Marshal(structure)
 	if err != nil {
 		fmt.Fprintf(stream.Write, "Failed to parse json: %s", err)
 		return
@@ -83,33 +70,45 @@ func renderJSON() {
 	fmt.Fprintf(stream.Write, string(b))	
 }
 
+type Status struct {
+		Success bool
+	}
+
 func api_handler (w http.ResponseWriter, r *http.Request) {
 
-	const success = map[string]bool{"success":true}
-	const fail = map[string]bool{"success":false}
+	stream := test.ServerStream {w, r}
 
-	stream = test.ServerStream {w, r}
-	
-	params, err := test.Watchdoge.GetParams(stream)
-	if err != nil { return }
+	watchdoge := test.Watchdoge {}
 
-	ssh_params, err := test.EasySSH.GetConfig(stream)
-	if err != nil { return }
+	watchdoge.GetProcname(stream)
+	watchdoge.GetSubprocname(stream)
+	watchdoge.GetPeriod(stream)
+	watchdoge.GetProcname(stream)
+	watchdoge.GetIterations(stream)
 
-	ssh_conn, err := CheckSSHConnection(params)
-	if  err != nil { return }
+	ssh_params  := test.EasySSH{}
 
-	metrics, err := PullRemoteProcessMetrics(params)
-	if  err != nil { return }
+	ssh_params.GetUser(stream)	
+	ssh_params.GetConfig(stream)
+
+	CheckSSHConnection(ssh_params)
+
+	PullRemoteProcessMetrics(ssh_params, watchdoge)
+
+	renderJSON(stream, Status{true})
 }
 
 func status (w http.ResponseWriter, r *http.Request) {
-	stream = test.ServerStream {w, r}
-	fmt.Fprintf(stream.Write, "ok")
+
+	stream := test.ServerStream {w, r}
+
+	renderJSON(stream, Status{true})
 }
 
 func main() {
-	http.HandleFunc("/", status)
+	port := "8080"
+	http.HandleFunc("/status", status)
 	http.HandleFunc("/api", api_handler)
-	http.ListenAndServe(":8080", nil)	
+	fmt.Println("Server running on port", port)
+	http.ListenAndServe(":" + port, nil)
 }
