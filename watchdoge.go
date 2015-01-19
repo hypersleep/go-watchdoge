@@ -8,10 +8,11 @@ import(
 	"time"
 	"strconv"
 	"github.com/hypersleep/easyssh"
+	"regexp"
 )
 
 type Watchdoge struct {
-	Pid string 
+	Pid, Stat string 
 	Period, Iterations int
 }
 
@@ -25,13 +26,13 @@ type Status struct {
 }
 
 type Process struct {
-	Pid int
+	Pid string
 	Command string
 }
 
 func RunPidstat(ssh_params *easyssh.MakeConfig, watchdoge *Watchdoge) {
-	cmd := "LANG=ru_RU.UTF-8 pidstat -r -p " + watchdoge.Pid
-	response, _ := ssh_params.ConnectAndRun(cmd)
+	response, err := ssh_params.ConnectAndRun("cat /proc/" + watchdoge.Pid + "/status | grep " + watchdoge.Stat)
+	if err != nil {	fmt.Println(err.Error()) }
 	fmt.Println(strings.TrimSpace(response))
 	return
 }
@@ -54,50 +55,71 @@ func renderJSON(stream ServerStream, structure interface{}) {
 }
 
 func api_handler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	stream := ServerStream { w, r }
 
+	user := r.URL.Query().Get("user")
+	server := r.URL.Query().Get("server")
 	pid := r.URL.Query().Get("pid")
 	period, _ := strconv.Atoi(r.URL.Query().Get("period"))
 	iterations, _ := strconv.Atoi(r.URL.Query().Get("iterations"))
+	stat := r.URL.Query().Get("stat")
 
 	watchdoge_params := &Watchdoge {
 		Pid: pid,
 		Period: period,
 		Iterations: iterations,
+		Stat: stat,
 	}
 
 	ssh_params := &easyssh.MakeConfig {
-        User: "core",
-        Server: "core",
+        User: user,
+        Server: server,
         Key: "/.ssh/id_rsa",
     }
 
-	PullRemoteProcessMetrics(ssh_params, watchdoge_params)
+	go PullRemoteProcessMetrics(ssh_params, watchdoge_params)
 
 	renderJSON(stream, Status{true})
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	stream := ServerStream { w, r }
 	renderJSON(stream, Status{true})
 }
 
+func ParseProcesses(stdout string) (processes []Process) {
+	stdout_parsed := strings.Split(stdout, "\n")
+	for _, process := range stdout_parsed {
+		r, _ := regexp.Compile("(?:\\s*)([0-9]*)(?:\\s)(.*)")
+		process_item := r.FindAllStringSubmatch(process, -1)
+		if process_item != nil && process_item[0][1] != "" && process_item[0][2] != "" {
+			processes = append(processes, Process{process_item[0][1], process_item[0][2]})
+		}
+	}
+	return
+}
+
 func ps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	stream := ServerStream { w, r }
 
+	user := r.URL.Query().Get("user")
+	server := r.URL.Query().Get("server")
+
 	ssh_params := &easyssh.MakeConfig {
-        User: "core",
-        Server: "core",
+        User: user,
+        Server: server,
         Key: "/.ssh/id_rsa",
     }
 
-	response, err := ssh_params.ConnectAndRun("ps axho pid,command | awk '{print $1\" \"$2}'")
+	response, err := ssh_params.ConnectAndRun("ps axho pid,command --sort rss")
 	if err != nil {
 		renderJSON(stream, Status{false})
 		return
 	} else {
-		// var processes []Process
-		processes := strings.Split(response, "\n")
+		processes := ParseProcesses(response)
 		renderJSON(stream, processes)
 	}
 }
