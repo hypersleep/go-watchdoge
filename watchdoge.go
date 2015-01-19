@@ -6,42 +6,46 @@ import(
 	"encoding/json"
 	"strings"
 	"time"
-	"./test"
-	"./easyssh"
+	"strconv"
+	"github.com/hypersleep/easyssh"
+	"regexp"
 )
+
+type Watchdoge struct {
+	Pid, Stat string 
+	Period, Iterations int
+}
 
 type ServerStream struct {
 	Write http.ResponseWriter
 	Read *http.Request
 }
 
-func RunPidstat (ssh_params easyssh.EasySSH, watchdoge test.Watchdoge, pid string) {
-	cmd := "LANG=ru_RU.UTF-8 pidstat -r -p " + pid +" | grep " + watchdoge.Procname
-	response, _ := ssh_params.ConnectAndRun(cmd)
+type Status struct {
+	Success bool
+}
+
+type Process struct {
+	Pid string
+	Command string
+}
+
+func RunPidstat(ssh_params *easyssh.MakeConfig, watchdoge *Watchdoge) {
+	response, err := ssh_params.ConnectAndRun("cat /proc/" + watchdoge.Pid + "/status | grep " + watchdoge.Stat)
+	if err != nil {	fmt.Println(err.Error()) }
 	fmt.Println(strings.TrimSpace(response))
 	return
 }
 
-func FindRemoteProcess (ssh_params easyssh.EasySSH, watchdoge test.Watchdoge) (pid string) {
-	cmd := "ps ax -o pid,command | grep " + watchdoge.Procname + " | grep " + watchdoge.Subprocname + " | grep -v bash | awk '{print $1}'"
-	response, err := ssh_params.ConnectAndRun(cmd)
-	if err != nil {
-		panic("Failed to find remote process: " + err.Error())
-	}
-	pid = strings.TrimSpace(response)
-	return
-}
-
-func PullRemoteProcessMetrics (ssh_params easyssh.EasySSH, watchdoge test.Watchdoge) {
+func PullRemoteProcessMetrics(ssh_params *easyssh.MakeConfig, watchdoge *Watchdoge) {
 	fmt.Println("Process info:")
-	pid := FindRemoteProcess(ssh_params, watchdoge)
 	for i := 0; i < watchdoge.Iterations; i++ {
-		go RunPidstat(ssh_params, watchdoge, pid)
+		go RunPidstat(ssh_params, watchdoge)
 		time.Sleep(time.Duration(watchdoge.Period) * time.Second)
 	}
 }
 
-func renderJSON (stream ServerStream, structure interface{}) {
+func renderJSON(stream ServerStream, structure interface{}) {
 	b, err := json.Marshal(structure)
 	if err != nil {
 		fmt.Fprintf(stream.Write, "Failed to parse json: %s", err)
@@ -50,49 +54,81 @@ func renderJSON (stream ServerStream, structure interface{}) {
 	fmt.Fprintf(stream.Write, string(b))	
 }
 
-type Status struct {
-		Success bool
+func api_handler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	stream := ServerStream { w, r }
+
+	user := r.URL.Query().Get("user")
+	server := r.URL.Query().Get("server")
+	pid := r.URL.Query().Get("pid")
+	period, _ := strconv.Atoi(r.URL.Query().Get("period"))
+	iterations, _ := strconv.Atoi(r.URL.Query().Get("iterations"))
+	stat := r.URL.Query().Get("stat")
+
+	watchdoge_params := &Watchdoge {
+		Pid: pid,
+		Period: period,
+		Iterations: iterations,
+		Stat: stat,
 	}
 
-func api_handler (w http.ResponseWriter, r *http.Request) {
+	ssh_params := &easyssh.MakeConfig {
+        User: user,
+        Server: server,
+        Key: "/.ssh/id_rsa",
+    }
 
-	stream := ServerStream {w, r}
-
-	doge_stream := test.ServerStream {w, r}
-
-	watchdoge := test.Watchdoge {}
-
-	watchdoge.GetProcname(doge_stream)
-	watchdoge.GetSubprocname(doge_stream)
-	watchdoge.GetPeriod(doge_stream)
-	watchdoge.GetProcname(doge_stream)
-	watchdoge.GetIterations(doge_stream)
-
-	ssh_stream := easyssh.ServerStream {w, r}
-
-	ssh_params  := easyssh.EasySSH {}
-
-	ssh_params.GetUser(ssh_stream)	
-	ssh_params.GetConfig(ssh_stream)
-
-	ssh_params.CheckSSHConnection()
-
-	PullRemoteProcessMetrics(ssh_params, watchdoge)
+	go PullRemoteProcessMetrics(ssh_params, watchdoge_params)
 
 	renderJSON(stream, Status{true})
 }
 
-func status (w http.ResponseWriter, r *http.Request) {
-
-	stream := ServerStream {w, r}
-
+func status(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	stream := ServerStream { w, r }
 	renderJSON(stream, Status{true})
+}
+
+func ParseProcesses(stdout string) (processes []Process) {
+	stdout_parsed := strings.Split(stdout, "\n")
+	for _, process := range stdout_parsed {
+		r, _ := regexp.Compile("(?:\\s*)([0-9]*)(?:\\s)(.*)")
+		process_item := r.FindAllStringSubmatch(process, -1)
+		if process_item != nil && process_item[0][1] != "" && process_item[0][2] != "" {
+			processes = append(processes, Process{process_item[0][1], process_item[0][2]})
+		}
+	}
+	return
+}
+
+func ps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	stream := ServerStream { w, r }
+
+	user := r.URL.Query().Get("user")
+	server := r.URL.Query().Get("server")
+
+	ssh_params := &easyssh.MakeConfig {
+        User: user,
+        Server: server,
+        Key: "/.ssh/id_rsa",
+    }
+
+	response, err := ssh_params.ConnectAndRun("ps axho pid,command --sort rss")
+	if err != nil {
+		renderJSON(stream, Status{false})
+		return
+	} else {
+		processes := ParseProcesses(response)
+		renderJSON(stream, processes)
+	}
 }
 
 func main() {
 	port := "8080"
 	http.HandleFunc("/status", status)
 	http.HandleFunc("/api", api_handler)
+	http.HandleFunc("/ps", ps)
 	fmt.Println("Server running on port", port)
 	http.ListenAndServe(":" + port, nil)
 }
