@@ -9,6 +9,9 @@ import(
 	"strconv"
 	"github.com/hypersleep/easyssh"
 	"regexp"
+	"io/ioutil"
+	"gopkg.in/yaml.v2"
+	"gopkg.in/redis.v2"
 )
 
 type Watchdoge struct {
@@ -29,6 +32,12 @@ type Process struct {
 	Pid string
 	Command string
 }
+
+type ServersConfig struct {
+	Servers map[string][]string
+}
+
+var servers = ServersConfig{}
 
 func RunPidstat(ssh_params *easyssh.MakeConfig, watchdoge *Watchdoge) {
 	response, err := ssh_params.ConnectAndRun("cat /proc/" + watchdoge.Pid + "/status | grep " + watchdoge.Stat)
@@ -124,8 +133,40 @@ func ps(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func loadConfig() {
+	buf, err := ioutil.ReadFile("config.yml")
+	if err != nil {
+		fmt.Println("error: %v", err)
+	}
+	err = yaml.Unmarshal(buf, &servers)
+	if err != nil {
+		fmt.Println("error: %v", err)
+	}
+	fmt.Println(servers)
+}
+
+func setServers() {
+	client := redis.NewTCPClient(&redis.Options{
+    Addr:     "localhost:6379",
+    Password: "", // no password set
+    DB:       0,  // use default DB
+	})
+
+	for server_name, server_params := range servers.Servers {
+		if err := client.Set("servers:" + server_name + ":ip", server_params[0]).Err(); err != nil {
+	    	panic(err)
+		}
+		if err := client.Set("servers:" + server_name + ":ssh_user", server_params[1]).Err(); err != nil {
+	    	panic(err)
+		}
+		fmt.Println("Server " + server_name + " published in redis store")
+	}
+}
+
 func main() {
 	port := "8080"
+	loadConfig()
+	setServers()
 	http.HandleFunc("/status", status)
 	http.HandleFunc("/api", api_handler)
 	http.HandleFunc("/ps", ps)
