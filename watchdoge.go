@@ -40,9 +40,17 @@ type ServersConfig struct {
 var servers = ServersConfig{}
 
 func RunPidstat(ssh_params *easyssh.MakeConfig, watchdoge *Watchdoge) {
+	client := redis.NewTCPClient(&redis.Options{
+	Addr:     "localhost:6379",
+	Password: "", // no password set
+	DB:       0,  // use default DB
+	})
+
 	response, err := ssh_params.ConnectAndRun("cat /proc/" + watchdoge.Pid + "/status | grep " + watchdoge.Stat)
 	if err != nil {	fmt.Println(err.Error()) }
 	fmt.Println(strings.TrimSpace(response))
+	b := strings.Split(response, " ")
+	client.Set("metrics:" + ssh_params.Server + ":" + watchdoge.Pid + ":" + b[0] + ":" + string(int32(time.Now().Unix())), b[2]+b[3])
 	return
 }
 
@@ -67,8 +75,17 @@ func api_handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	stream := ServerStream { w, r }
 
-	user := r.URL.Query().Get("user")
-	server := r.URL.Query().Get("server")
+	server_name := r.URL.Query().Get("server")
+
+	client := redis.NewTCPClient(&redis.Options{
+	Addr:     "localhost:6379",
+	Password: "", // no password set
+	DB:       0,  // use default DB
+	})
+
+	server, _ := client.Get("servers:" + server_name + ":ip").Result()
+	user, _ := client.Get("servers:" + server_name + ":ssh_user").Result()
+
 	pid := r.URL.Query().Get("pid")
 	period, _ := strconv.Atoi(r.URL.Query().Get("period"))
 	iterations, _ := strconv.Atoi(r.URL.Query().Get("iterations"))
@@ -114,8 +131,16 @@ func ps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	stream := ServerStream { w, r }
 
-	user := r.URL.Query().Get("user")
-	server := r.URL.Query().Get("server")
+	server_name := r.URL.Query().Get("server")
+
+	client := redis.NewTCPClient(&redis.Options{
+	Addr:     "localhost:6379",
+	Password: "", // no password set
+	DB:       0,  // use default DB
+	})
+
+	server, err := client.Get("servers:" + server_name + ":ip").Result()
+	user, err := client.Get("servers:" + server_name + ":ssh_user").Result()
 
 	ssh_params := &easyssh.MakeConfig {
         User: user,
@@ -142,14 +167,13 @@ func loadConfig() {
 	if err != nil {
 		fmt.Println("error: %v", err)
 	}
-	fmt.Println(servers)
 }
 
 func setServers() {
 	client := redis.NewTCPClient(&redis.Options{
-    Addr:     "localhost:6379",
-    Password: "", // no password set
-    DB:       0,  // use default DB
+	Addr:     "localhost:6379",
+	Password: "", // no password set
+	DB:       0,  // use default DB
 	})
 
 	for server_name, server_params := range servers.Servers {
