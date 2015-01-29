@@ -53,6 +53,7 @@ func main() {
 	http.HandleFunc("/status", status)
 	http.HandleFunc("/api", api_handler)
 	http.HandleFunc("/ps", ps)
+	http.HandleFunc("/metrics", metrics)
 	fmt.Println("Server running on port", server_config.Port)
 	http.ListenAndServe(":" + server_config.Port, nil)
 }

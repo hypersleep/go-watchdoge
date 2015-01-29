@@ -96,3 +96,20 @@ func ps(w http.ResponseWriter, r *http.Request) {
 		renderJSON(w, processes)
 	}
 }
+
+type Metric struct {
+	Key, Value string
+}
+
+func metrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	server_name := r.URL.Query().Get("server")
+	server, _ := redis_client.Get("servers:" + server_name + ":ip").Result()
+	_, metric_keys, _ := redis_client.Scan(0, "metrics:" + server + ":*", 50).Result()
+	var metrics []Metric
+	for _, metric_key := range metric_keys {
+		metric_value, _ := redis_client.Get(metric_key).Result()
+		metrics = append(metrics, Metric{metric_key, metric_value})
+	}
+	renderJSON(w, metrics)
+}
