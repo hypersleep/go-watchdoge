@@ -96,3 +96,40 @@ func ps(w http.ResponseWriter, r *http.Request) {
 		renderJSON(w, processes)
 	}
 }
+
+type Metric struct {
+	Key, Value string
+}
+
+func metrics(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, X-Requested-With,")
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	server_name := r.URL.Query().Get("server")
+	server, err := redis_client.Get("servers:" + server_name + ":ip").Result()
+	if err != nil {
+		renderJSON(w, Status{false})
+		return
+	}
+	_, metric_keys, err := redis_client.Scan(0, "metrics:" + server + ":*", 50).Result()
+	if err != nil {
+		renderJSON(w, Status{false})
+		return
+	}
+	var metrics []Metric
+	for _, metric_key := range metric_keys {
+		metric_value, err := redis_client.Get(metric_key).Result()
+		if err != nil {
+			renderJSON(w, Status{false})
+			return
+		}
+		arr := strings.Split(metric_key, ":")
+		metric_key = arr[4]
+		metrics = append(metrics, Metric{metric_key, metric_value})
+	}
+	renderJSON(w, metrics)
+}
