@@ -9,6 +9,11 @@
     <link href="style.css" rel="stylesheet" type="text/css">
   </head>
   <body ng-controller="AppCtrl">
+    <form ng-submit="getMetrics()">
+      Server: <input ng-model="server"></input>
+      Redis Accuracy: <input ng-model="redis_accuracy"></input>
+      <input type="submit" value="Get Data">
+    </form>
     <h1>Metrics Graph</h1>
     <chart val="data"></chart>
   </body>
