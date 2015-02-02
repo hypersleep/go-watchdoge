@@ -8,6 +8,7 @@ import(
 	"strconv"
 	"github.com/hypersleep/easyssh"
 	"regexp"
+	"time"
 )
 
 type Status struct {
@@ -98,7 +99,8 @@ func ps(w http.ResponseWriter, r *http.Request) {
 }
 
 type Metric struct {
-	Key, Value string
+	Key string    `json:"date"`
+	Value string  `json:"close"`
 }
 
 func metrics(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +117,8 @@ func metrics(w http.ResponseWriter, r *http.Request) {
 		renderJSON(w, Status{false})
 		return
 	}
-	_, metric_keys, err := redis_client.Scan(0, "metrics:" + server + ":*", 50).Result()
+	// _, metric_keys, err := redis_client.Scan(0, "metrics:" + server + ":*", 50).Result()
+	metric_keys, err := redis_client.Keys("metrics:" + server + ":*").Result()
 	if err != nil {
 		renderJSON(w, Status{false})
 		return
@@ -129,6 +132,19 @@ func metrics(w http.ResponseWriter, r *http.Request) {
 		}
 		arr := strings.Split(metric_key, ":")
 		metric_key = arr[4]
+		i, err := strconv.ParseInt(metric_key, 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		tm := time.Unix(i, 0)
+		metric_key = strconv.Itoa(tm.Day())
+		metric_key += "-" + tm.Month().String()
+		metric_key += "-" + strconv.Itoa(tm.Year())
+		metric_key += "-" + strconv.Itoa(tm.Hour())
+		metric_key += "-" + strconv.Itoa(tm.Minute())
+		metric_key += "-" + strconv.Itoa(tm.Second())
+		metric_value = strings.TrimSpace(metric_value)
+		metric_value = strings.Replace(metric_value, "kB", "", -1)
 		metrics = append(metrics, Metric{metric_key, metric_value})
 	}
 	renderJSON(w, metrics)
