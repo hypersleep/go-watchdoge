@@ -112,13 +112,14 @@ func metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	server_name := r.URL.Query().Get("server")
+	redis_accuracy, err := strconv.Atoi(r.URL.Query().Get("redis_ac"))
 	server, err := redis_client.Get("servers:" + server_name + ":ip").Result()
 	if err != nil {
 		renderJSON(w, Status{false})
 		return
 	}
-	// _, metric_keys, err := redis_client.Scan(0, "metrics:" + server + ":*", 50).Result()
-	metric_keys, err := redis_client.Keys("metrics:" + server + ":*").Result()
+	_, metric_keys, err := redis_client.Scan(0, "metrics:" + server + ":*", int64(redis_accuracy)).Result()
+	// metric_keys, err := redis_client.Keys("metrics:" + server + ":*").Result()
 	if err != nil {
 		renderJSON(w, Status{false})
 		return

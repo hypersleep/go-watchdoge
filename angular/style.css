@@ -2,6 +2,15 @@ body {
   font: 10px sans-serif;
 }
 
+svg {
+  font: 10px sans-serif;
+}
+
+.area {
+  fill: steelblue;
+  clip-path: url(#clip);
+}
+
 .axis path,
 .axis line {
   fill: none;
@@ -9,6 +18,8 @@ body {
   shape-rendering: crispEdges;
 }
 
-.area {
-  fill: steelblue;
+.brush .extent {
+  stroke: #fff;
+  fill-opacity: .125;
+  shape-rendering: crispEdges;
 }
