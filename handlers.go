@@ -88,7 +88,7 @@ func ps(w http.ResponseWriter, r *http.Request) {
         Key: "/.ssh/id_rsa",
     }
 
-	response, err := ssh_params.ConnectAndRun("ps axho pid,command --sort rss")
+	response, err := ssh_params.Run("ps axho pid,command --sort rss")
 	if err != nil {
 		renderJSON(w, Status{false})
 		return

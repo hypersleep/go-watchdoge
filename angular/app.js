@@ -1,26 +1,22 @@
 var watchDogeFrontend = angular.module('watchDogeFrontend', []);
 
 watchDogeFrontend.controller('AppCtrl', function AppCtrl ($scope, $http) {
-  $scope.server = 'localhost:8080';
+  $scope.monitoring_server = 'localhost:8080';
+  $scope.server = 'istream109';
   $scope.redis_accuracy = '100';
   $scope.getMetrics = function () {
-    $http.get('http://' + $scope.server +'/metrics?server=istream109&redis_ac=' + $scope.redis_accuracy).success( function (data) { $scope.data = data; } );
+    $http.get('http://' + $scope.monitoring_server
+              +'/metrics?server=' + $scope.server
+              + '&redis_ac=' + $scope.redis_accuracy)
+            .success( function (data) { $scope.data = data; } );
   };
   $scope.getMetrics();
 });
 
 watchDogeFrontend.directive('chart', function () {
-
-  var margin = 20,
-  width = 960,
-  height = 500 - .5 - margin,
-  color = d3.interpolateRgb("#f77", "#77f");
-
   return {
-            restrict: 'E', // the directive can be invoked only by using <my-directive> tag in the template
-            scope: { // attributes bound to the scope of the directive
-              val: '='
-            },
+            restrict: 'E',
+            scope: { val: '=' },
             link:function(scope, element, attrs) {
 
               var margin = {top: 10, right: 10, bottom: 100, left: 40},
@@ -29,7 +25,7 @@ watchDogeFrontend.directive('chart', function () {
                   height = 500 - margin.top - margin.bottom,
                   height2 = 500 - margin2.top - margin2.bottom;
 
-              var parseDate = d3.time.format('%d-%B-%Y-%H-%M-%S').parse;             
+              var parseDate = d3.time.format('%d-%B-%Y-%H-%M-%S').parse;
 
               var x = d3.time.scale().range([0, width]),
                   x2 = d3.time.scale().range([0, width]),
@@ -38,11 +34,7 @@ watchDogeFrontend.directive('chart', function () {
 
               var xAxis = d3.svg.axis().scale(x).orient("bottom"),
                   xAxis2 = d3.svg.axis().scale(x2).orient("bottom"),
-                  yAxis = d3.svg.axis().scale(y).orient("left");
-
-              var brush = d3.svg.brush()
-                  .x(x2)
-                  .on("brush", brushed);
+                  yAxis = d3.svg.axis().scale(y).orient("left");          
 
               var area = d3.svg.area()
                   .interpolate("monotone")
@@ -60,26 +52,31 @@ watchDogeFrontend.directive('chart', function () {
                   .attr("width", width + margin.left + margin.right)
                   .attr("height", height + margin.top + margin.bottom);
 
-              svg.append("defs").append("clipPath")
+              scope.$watch('val', function (newVal, oldVal) {
+                
+                svg.selectAll('*').remove();
+
+                if (!newVal) {
+                  return;
+                }
+
+                var brush = d3.svg.brush()
+                  .x(x2)
+                  .on("brush", brushed);
+
+                svg.append("defs").append("clipPath")
                   .attr("id", "clip")
                 .append("rect")
                   .attr("width", width)
                   .attr("height", height);
 
-              var focus = svg.append("g")
-                  .attr("class", "focus")
-                  .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+                var focus = svg.append("g")
+                    .attr("class", "focus")
+                    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-              var context = svg.append("g")
-                  .attr("class", "context")
-                  .attr("transform", "translate(" + margin2.left + "," + margin2.top + ")");
-
-              scope.$watch('val', function (newVal, oldVal) {
-              // vis.selectAll('*').remove();
-
-                if (!newVal) {
-                  return;
-                }
+                var context = svg.append("g")
+                    .attr("class", "context")
+                    .attr("transform", "translate(" + margin2.left + "," + margin2.top + ")");
 
                 data = newVal
 
@@ -94,6 +91,12 @@ watchDogeFrontend.directive('chart', function () {
                 y.domain([0, d3.max(data, function(d) { return d.close; })]);
                 x2.domain(x.domain());
                 y2.domain(y.domain());
+
+                function brushed() {
+                x.domain(brush.empty() ? x2.domain() : brush.extent());
+                focus.select(".area").attr("d", area);
+                focus.select(".x.axis").call(xAxis);
+                }
 
                 focus.append("path")
                     .datum(data)
@@ -125,22 +128,13 @@ watchDogeFrontend.directive('chart', function () {
                   .selectAll("rect")
                     .attr("y", -6)
                     .attr("height", height2 + 7);
-
               });
-
-              function brushed() {
-                x.domain(brush.empty() ? x2.domain() : brush.extent());
-                focus.select(".area").attr("d", area);
-                focus.select(".x.axis").call(xAxis);
-              }
-
               function type(d) {
                 d.date = parseDate(d.date);
                 d.close = +d.close;
                 return d;
               }
-
             }
-        }
+          }
 });
 
