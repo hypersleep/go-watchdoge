@@ -14,7 +14,7 @@ type Watchdoge struct {
 }
 
 func RunPidstat(ssh_params *easyssh.MakeConfig, watchdoge *Watchdoge) {
-	response, err := ssh_params.ConnectAndRun("cat /proc/" + watchdoge.Pid + "/status | grep " + watchdoge.Stat)
+	response, err := ssh_params.Run("cat /proc/" + watchdoge.Pid + "/status | grep " + watchdoge.Stat)
 	if err != nil {
 		fmt.Println(err.Error())
 	} else {
