@@ -42,6 +42,7 @@ func SetServers() {
 	for server_name, server_params := range server_config.Servers {
 		redis_client.Set("servers:" + server_name + ":ip", server_params[0])
 		redis_client.Set("servers:" + server_name + ":ssh_user", server_params[1])
+		redis_client.Set("servers:" + server_name + ":ssh_port", server_params[2])
 		fmt.Println("Node " + server_name + " published in redis store")
 	}
 }

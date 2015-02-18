@@ -47,6 +47,7 @@ func api_handler(w http.ResponseWriter, r *http.Request) {
 
 	server, _ := redis_client.Get("servers:" + server_name + ":ip").Result()
 	user, _ := redis_client.Get("servers:" + server_name + ":ssh_user").Result()
+	port, _ := redis_client.Get("servers:" + server_name + ":ssh_port").Result()
 
 	pid := r.URL.Query().Get("pid")
 	period, _ := strconv.Atoi(r.URL.Query().Get("period"))
@@ -64,6 +65,7 @@ func api_handler(w http.ResponseWriter, r *http.Request) {
         User: user,
         Server: server,
         Key: "/.ssh/id_rsa",
+        Port: port,
     }
 
 	go PullRemoteProcessMetrics(ssh_params, watchdoge_params)
@@ -81,11 +83,13 @@ func ps(w http.ResponseWriter, r *http.Request) {
 	server_name := r.URL.Query().Get("server")
 	server, err := redis_client.Get("servers:" + server_name + ":ip").Result()
 	user, err := redis_client.Get("servers:" + server_name + ":ssh_user").Result()
+	port, _ := redis_client.Get("servers:" + server_name + ":ssh_port").Result()
 
 	ssh_params := &easyssh.MakeConfig {
         User: user,
         Server: server,
         Key: "/.ssh/id_rsa",
+        Port: port,
     }
 
 	response, err := ssh_params.Run("ps axho pid,command --sort rss")
